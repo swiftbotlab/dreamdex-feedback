@@ -1,0 +1,64 @@
+# SDK docs: the Perps guide documents `getMarginEvents` options (`sinceBlock`/`toBlock`, kind `CreditReclaimed`) that 0.32.1 does not accept, so the documented trading-gain recipe silently over-counts
+Severity: normal
+Area: docs | SDK
+
+The Somnia Markets SDK docs page `/markets/somnia-markets/typescript/perps` ("Account equity for
+scoring is one read", also in `llms-full.txt`) gives a competition-scoring recipe that reads flows
+between two equity snapshots with
+
+```ts
+client.getMarginEvents(account, {
+  kinds: ["Deposit", "Credited", "Withdraw", "CreditReclaimed"],
+  sinceBlock: start.asOfBlock + 1n, toBlock: end.asOfBlock,
+  limit, offset,
+})
+```
+
+and a table that lists `CreditReclaimed (voucher sweep)` as an `out` flow. In the published SDK
+(0.32.1, the version the developer page says the app runs, and also the 0.32.2 canary):
+
+- `GetMarginEventsOptions` has only `kinds`, `limit`, `offset` (src/perp/history.ts:90–104); the
+  implementation builds `where` from `account` and `kinds` only (history.ts:657–669). `sinceBlock` /
+  `toBlock` are not read, so a JavaScript caller that pastes the recipe gets the account's **whole**
+  history, newest first, and `flows` includes deposits made before `start` — the trading gain comes
+  out wrong with no error.
+- `MarginEventKind` is the closed union `"Deposit" | "Withdraw" | "Locked" | "Unlocked" | "Credited"`
+  (history.ts:83, runtime copy at :675). `"CreditReclaimed"` throws
+  `InvalidInputError("Margin event kinds must contain only Deposit, Withdraw, Locked, Unlocked, Credited; got CreditReclaimed")`
+  (history.ts:697–700), so the recipe as written does not run at all in TypeScript or JavaScript.
+- The same page opens with "Perps are live on testnet: `BTC/USDSO:USDSO` and `ETH/USDSO:USDSO`";
+  21 perp markets are live (`PerpPoolFactory.perpPoolCount()` = 21).
+
+## Steps to reproduce
+1. `npm pack @somnia-chain/markets-sdk@0.32.1` and open `package/src/perp/history.ts`.
+2. Read `GetMarginEventsOptions` (lines 90–104), `getMarginEvents` (657–669), `MarginEventKind` (83)
+   and `marginEventKindList` (691–704).
+3. Compare with the recipe on the docs page (search for `CreditReclaimed` and `sinceBlock` under
+   "Account equity for scoring is one read").
+4. `grep -rn "sinceBlock" package/src/perp/history.ts` -> no matches (the only `sinceBlock` support in
+   the SDK is for orders, `src/orders.ts:255`).
+
+## Expected
+The documented options exist, or the docs document the options the shipped SDK has.
+
+## Actual
+`sinceBlock`/`toBlock` are ignored by `getMarginEvents`; `CreditReclaimed` is rejected before the
+request; the market list sentence is from the two-market era.
+
+## Evidence
+- Source lines quoted above (0.32.1 tarball, sha from npm; same in
+  `0.32.2-canary.38575926931.ge4550933d36d`).
+- `PerpPoolFactory.perpPoolCount()` = 21 at block 27491272 (`scripts/survey.mjs`).
+
+## Suggested fix
+Either ship `sinceBlock`/`toBlock` on `getMarginEvents` (the indexer row has no `blockNumber`
+field — `field 'blockNumber' not found in type: 'MarginEvent'` — so this needs an indexer column too)
+and add `CreditReclaimed` to `MarginEventKind`, or rewrite the recipe to filter by `timestamp` and
+the kinds that exist. Update the "live on testnet" sentence to the live market count.
+
+## Environment
+- `@somnia-chain/markets-sdk` 0.32.1 and 0.32.2-canary (source read; not executed)
+- Docs: `https://somnia-platform-docs.vercel.app/markets/somnia-markets/typescript/perps` and
+  `https://somnia-platform-explorer.vercel.app/markets/llms-full.txt`, read 2026-10-19 ~09:45 UTC
+- Somnia Hideki testnet, chain id 50383
+- Wallet: n/a

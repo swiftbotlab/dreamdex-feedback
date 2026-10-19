@@ -1,0 +1,9 @@
+SDK shape: account + kinds D/C/W, ts desc    10.98s ERROR
+SDK shape: account + kinds D/C/W, ts desc    10.55s ERROR
+SDK shape: account + kinds D/C/W, ts desc    10.60s ERROR
+account only, ts desc                        0.69s ok
+account + kinds Locked, ts desc              0.66s ok
+account + kinds D/C/W, order id desc         0.84s ok
+account + kinds D/C/W, no order              0.72s ok
+distinct_on kind                             10.63s ERROR
+aggregate count for account                  0.73s ERROR
